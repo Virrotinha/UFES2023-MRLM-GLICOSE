@@ -1,0 +1,794 @@
+---
+title: "Análise de Modelo de Regressão Linear para o nível de Glicose de Indígenas Norte-Americanas"
+format: pdf
+toc: true 
+toc-depth: 3
+number-sections: true
+number-depth: 1
+toc-title: Sumário
+author: Vitória Nascimento de Jesus Sesana
+date-modified: UFES, Junho de 2023
+editor: visual
+bibliography: referencias.bib
+crossref: 
+  fig-title: '**Figura**'
+  fig-prefix: Figura
+geometry: 
+  - top=30mm
+  - left=20mm
+  - right=20mm
+  - bottom=30mm
+header-includes:
+    - \usepackage{caption}
+---
+
+\captionsetup[table]{name=Tabela}
+
+```{r Opções, include=FALSE}
+options(scipen = 999) # notação científica desabilitada
+
+knitr::opts_chunk$set(echo = FALSE, 
+                      warning = FALSE, 
+                      message = FALSE, 
+                      fig.align = "center",
+                      fig.width = 15
+                      )
+```
+
+```{r Bibliotecas, include=FALSE}
+library(MASS)		# stepwise (aic) e transf. BoxCox
+library(mixlm)		# stepwise (valor-p)
+library(glmulti)	# all regression
+library(tidyverse)	# manipulacao de dados
+library(plotly)		# gráficos interativos
+library(GGally)		# gráfico - matriz de correlação
+library(car)    	# vif - multicolinearidade
+library(nortest)  	# normalidade
+library(lmtest)		# homocedasticidade e auto-correlação
+library(gamlss)		# incorporando heterocedasticidade
+library(nlme)		# incorporando auto-correlação
+library(mice)   #
+library(performance) # realizar análises visuais do modelo
+# library(kableExtra)
+```
+
+```{r Salvos, include=FALSE}
+load(file = "../modelos/analise_inicial.rda")
+load(file = "../modelos/base_tratada.rda")
+load(file = "../modelos/graficos.rda")
+load(file = "../modelos/base_ajustada.rda")
+load(file = "../modelos/modelo01.rda")
+load(file = "../modelos/modelo01_outilers.rda")
+load(file = "../modelos/modelo01_normalidade.rda")
+load(file = "../modelos/modelo02.rda")
+load(file = "../modelos/modelo02_outilers.rda")
+load(file = "../modelos/modelo02_normalidade.rda")
+load(file = "../modelos/modelo03.rda")
+load(file = "../modelos/modelo03_outilers.rda")
+load(file = "../modelos/modelo03_normalidade.rda")
+load(file = "../modelos/modelo03_autocorrelacao.rda")
+```
+
+\pagebreak
+
+# Resumo
+
+O Instituto Nacional de Diabetes e Doenças Digestivas E Renais dos Estados UnidoS realizou, em 1988, uma pesquisa em que foram observadas mulheres descendentes dos Pimas, povo indígena norte-americano, que vivem nos arredores de Phoenix-Arizona, para prever qual dessas mulheres teriam ou não diabetes de acordo com características físicas analisadas. No entanto, o intuito deste relatório é analisar como essas características afetam o nível de glicose dessas mulheres. Os dados originais da pesquisa contém 9 variáveis, sendo 8 relacionadas a características médicas de 768 mulheres descendentes desse grupo e que possuíssem pelo menos 21 anos.
+
+\pagebreak
+
+# Sobre o modelo de regressão linear
+
+Entender como um elemento se comporta a partir de um conjunto de dados é um dos objetivos para construir modelos de regressão, além de ter a possibilidade de predize-los. No caso do modelo de regressão linear, essa relação é expressa como uma função linear, como por exemplo $y = a + bx$
+
+Com base em métodos estatísticos e matemáticos, consegue-se elaborar uma função que tenta explicar como uma variável se comporta de acordo com outras variáveis. Entretanto, o processo de modelagem dos dados apresenta diversas etapas que vão desde a interpretação inicial dos dados até averiguar a qualidade do modelo. Para identificar se o modelo construído é adequado ou não ele precisa se adequar às suposições exigidas. O resultado da construção de um modelo de regressão linear múltipla é obter estimativas dos coeficientes para cada covariável que explique a relação entre o conjunto de dado à variável de interesse, a fim de obter valores próximos dos valores observados.
+
+# Análise Descritiva
+
+O base de dados com 9 características coletadas da população de estudo está disponibilizada no site do [Kaggle](https://www.kaggle.com/datasets/uciml/pima-indians-diabetes-database), com o número total de `r nrow(df_inicial)` observações.
+
+```{r Tabela 5 Primeiras Observações}
+
+tabela_primeiras_obs <- head(df_inicial,5)
+rownames(tabela_primeiras_obs) <- c("Observação 1",
+                                    "Observação 2",
+                                    "Observação 3",
+                                    "Observação 4",
+                                    "Observação 5")
+
+
+knitr::kable(tabela_primeiras_obs, 
+             align = rep("r", ncol(df_inicial)),
+             caption = "Primeiras observações da população de estudo"
+             )
+
+```
+
+Onde:
+
+-   
+
+    (Y) **Glucose**: Concentração de glicose por meio de teste oral de tolerância à glicose;
+
+-   ($X_{1}$) **Pregnancies**: Quantidade de vezes que a mulher engravidou;
+
+-   ($X_{2}$) **BloodPressure**: Pressão arterial diastólica (mm Hg);
+
+-   ($X_{3}$) **SkinThickness**: Espessura cutânea triciptal (mm);
+
+-   ($X_{4}$) **Insulin**: 2 horas de insulina no soro (mu U/ml);
+
+-   ($X_{5}$) **BMI**: Índice de massa corporal (IMC);
+
+-   ($X_{6}$) **DiabetesPedigreeFunction**: Diabetes em função da ancestralidade, indica a probabilidade de diabetes com base no histórico familiar.
+
+-   ($X_{7}$) **Age**: Idade em anos das mulheres observadas;
+
+-   ($X_{8}$) **Outcome**: Indicador da presença de diabetes (0 = não possui, 1 = possui);
+
+No entanto, a coluna *Outcome* (X8), indicador de diabetes (0=saudavel, 1=diabético), não será utilizada no modelo, pois essa era a coluna de variável resposta proposto pelo desafio inicial, que não é o interesse desse relatório. Desse modo, a base passa a ter 8 variáveis, sendo a *Glucose* (Y) a variável de interesse (ou resposta) e as demais, $X_{i} \quad i = {1, \dots, 7}$, as variáveis explicativas (ou covariáveis).
+
+\pagebreak
+
+```{r Gráfico das Variáveis 1}
+#| label: fig-hist1
+#| fig-height: 12
+#| fig-width: 15
+#| fig-align: center
+#| fig-cap-location: top
+#| fig-cap: "Histograma das colunas Y, X1, X2 e X3"
+egg::ggarrange(
+  ggY, ggX1, ggX2, ggX3, 
+  ncol = 2, nrow = 2, labels = c("(a)", "(b)",  "(c)",  "(d)")
+  # labels = c("A", "B"), 
+  # widths = c(1.1, 0.9),
+  # heights = 0.1
+  )
+
+```
+
+A @fig-hist1 mostra a frequência dos níveis de glicose (a), quantidade de gestações (b), pressão sanguínea (c) e espessura da pele (d). Os valores destacados mostram resultados impossíveis para essas variáveis, como o indivíduo possuir 0 pressão sanguínea ou 0 nível de glicose no sangue. Esses valores estão iguais a zero, pois indicam valores faltantes na base de dados, ou seja, que por algum motivo não foram coletados. No gráfico (d) é o mais alarmante, pois há muita quantidade de dados que não condiz com o cenário real do estudo.
+
+\pagebreak
+
+```{r Gráfico das Variáveis 2}
+#| label: fig-hist2
+#| fig-height: 12
+#| fig-width: 15
+#| fig-align: center
+#| fig-cap-location: top
+#| fig-cap: "Histograma das colunas X4, X5, X6 e X7"
+egg::ggarrange(
+  ggX4, ggX5, ggX6, ggX7,
+  ncol = 2, nrow = 2, labels = c("(e)", "(f)",  "(g)",  "(h)")
+  # labels = c("A", "B"), 
+  # widths = c(1.1, 0.9),
+  # heights = 0.1
+  )
+
+```
+
+Do mesmo jeito que a @fig-hist1, a @fig-hist2 apresenta valores destacados, porém para as variáveis insulina (e), IMC (f), função de diabetes (g) e idade (h). Neste caso, apenas os valores da insulina e IMC apresentam dados que não condizem. O IMC apresenta poucos dados surreais, ao contrário da insulina que possui diversas
+
+Esses valores destacados indicam dados que não foram coletados e eles impactam na construção do modelo. Para compreender melhor o nível do problema, foi montado a seguinte tabela:
+
+```{r Tabela Dados Faltantes}
+#| fig-cap: "Descritiva Dados Faltantes"
+
+knitr::kable(tabela_NA, 
+             col.names = c(
+               "Quantidade de dados faltantes",
+               "Percentual em relação à própria variável (%)",
+               "Percentual em relação aos dados faltantes totais (%)"),
+             caption = "Observações de dados faltantes",
+             align = c("r","r","r"))
+
+```
+
+Para obter bons valores nas estimações, irá eliminar as observações em que a variável de interesse possui dados faltantes, no caso foram 5 observações. Desse modo, a base fica com 763 observações.
+
+Vale se atentar que a característica nível de insulina (X4), possui muitos NA's (dados faltantes), representando cerca de `r tabela_NA[5,2]`% do total de elementos dessa variável. Geralmente quando isso ocorre o ideal é eliminar essa variável da base de dados para elaborar o modelo.
+
+No entanto, a variável continuará na base de dados utilizada para estimar o modelo, tendo em vista que a insulina é relacionada com o nível de glicose.
+
+Há métodos para lidar com os dados faltantes. Como substituir os valores de acordo com a média do conjunto de dados, medianas e até mesmo elaborar um modelo de regressão para esses valores.
+
+No R, há a biblioteca **MICE**, pacote que é voltado para esse problema e que possui diversos. Neste caso, escolhi o método "*cart*" que utiliza a técnica de Árvores de classificação e regressão para imputar os valores faltantes.[^1]
+
+[^1]: Para verificar quais as outras opções para substituir dados faltantes acesse a documentação do pacote [Mice](https://cran.r-project.org/web/packages/mice/mice.pdf)
+
+Realizada a imputação dos dados faltantes, vamos verificar como é a correlação entre as variáveis com o gráfico abaixo.
+
+```{r Matriz de Correlação}
+#| label: fig-matriz
+#| fig-cap: "Matriz de Correlação das Variáveis"
+#| fig-height: 5
+#| fig-width: 10
+
+library(corrplot)
+corrplot::corrplot(
+  cor(df_tratado),
+  type = 'lower',
+  method = "color",
+  cl.ratio = 0.2, 
+  cl.cex = 1,
+  number.cex = 0.8,
+  addCoef.col ='black',
+  tl.cex = 1,
+  tl.col = 'black',
+  col = COL2('PuOr', 10),
+  addgrid.col = "black", number.font = 0.9
+)
+```
+
+A correlação é um valor que varia de -1 a 1 e quanto mais próximo do 0 menor a relação entre as variáveis, quanto os valores se aproximam aos intervalos extremos, mais forte a correlação é. Na @fig-matriz percebemos que poucas variáveis possuem forte relação entre si.
+
+Visualiza-se também que a variável de interesse, glicose (Y), possui relação positiva com todas as variáveis explicativas, no entanto elas são relações bem fracas (abaixo de 0.3), com exceção da Insulina (X4) onde há uma relação moderada (0.54). Isso pode significar que as características selecionadas para explicar o nível de glicose podem não ser as únicas características que expliquem esse fator a ser ajustado.
+
+# Modelagem
+
+Após os dados tratados e analisados, segue-se com as etapas para a construção do modelo para a variável glicose.
+
+## Multicolinearidade
+
+Antes de elaborar o primeiro modelo, é necessário verificar se as covariáveis são linearmente independentes entre si. Caso haja dependência, ou seja, combinações lineares entre as covariáveis, ocorre a redundância dessas variáveis no modelo, o que não contribui para a estimação dos coeficientes, já que essas estimativas podem não ser significativas, mesmo que a variável seja importante para explicar a variável resposta (aumento do erro tipo II).
+
+Alguns métodos para averiguar a existência de multicolinearidade são: matriz de correlação, fator inflacionário da variância (VIF) e os autovalores da matriz de correlação.
+
+**Matriz de correlação**
+
+A matriz de correlação vista na @fig-matriz é útil para analisar se os dados assumem o pressuposto de não colineariedade, porém, é analisado somente as covariáveis, ou seja, desconsidera-se as correlações entre a variável Y. Caso alguma apresente um valor maior que 0.8 então há fortes indícios de multicolinearidade
+
+**Fator Inflacionário da Variância**
+
+O VIF analisa o quanto a estimativa do coeficiente de uma variável explicativa é afetada pela combinação linear dessa variável com as demais. Se a variável apresenta pouca dependência linear, mais próximo de 1 o VIF fica, caso contrário o VIF tende ao infinito. Um ponto de corte recorrente para interpretar se a variável possui combinação linear é se o seu valor VIF é maior que 10.
+
+```{r Tabela VIF}
+#| label: tbl-vif
+#| tbl-cap: "Fator Inflacionário da Variância"
+tabela_vif <- lm(Y ~ ., data = df_tratado) %>% vif()
+
+knitr::kable(round(t(tabela_vif),3)
+             )
+```
+
+Pela @tbl-vif percebe-se que todas as variáveis explicativas ficam em torno de 1. Por meio desse resultado e do que foi observado pela matriz de correlação, conclui-se que não há fortes relações entre as covariáveis. Desse modo, o estimador para os coeficientes do modelo não é afetado pelas relações existentes entre as covariáveis, mesmo que existam.
+
+## 1º Modelo
+
+Com a multicolinearidade dos dados analisadas e não identificada, o próximo passo é construir o modelo inical. Este irá considerar interações 2 a 2, por se tratar de um conjunto de dados onde os efeitos das variáveis explicativas podem ser afetadas pelo efeito de covariável. Esta interação pode explicar melhor a nossa variável de interesse.
+
+```{r M1- Modelo antes da seleção de Variáveis}
+
+knitr::kable(
+  tabela_model_01,
+  caption = "Estimativas do 1º Modelo (inicialmente)",
+  align = c('r','c','c','c', 'c'))
+```
+
+A tabela acima informa o valor das estimativas dos coeficientes de cada covariável e suas interações, junto com as informações relacionadas ao teste de significância da covariável, onde analisa se essas são estatisticamente influentes no modelo. Caso a hipótese nula seja rejeitada(P-Valor \< 1%), isso mostra que a covariável não impacta no modelo, pois o resultado do teste informa que a variável é estatisticamente igual a 0.
+
+Percebe-se que a maioria dos coeficientes estimados desse modelo não são estatisticamente significantes para a variável de interesse (Y), ou seja, essa função possui variáveis que não impactam significativamente no nível da glicose. No entanto, escolher as variáveis que irão fazer parte do modelo, tanto retirar quanto adicionar, pode fazer com que as estimações dos coeficientes de outras variáveis passem a se tornar significantes para o modelo. Essa técnica de obter diferentes modelos a partir da escolha das variáveis é chamado de seleção de variáveis.
+
+Existem esses métodos para selecionar variáveis:*backward*, *foward*, *stepwise* ou *all regression*.
+
+Com a seleção de modelos realizada, basta compara-las e verificar qual apresenta melhor ajuste aos dados. Há métodos de comparação entre os modelos, que são: AIC, BIC ou coeficiente de determinação ($R^{2}$).
+
+A função *gmulti()*, do pacote **glmulti**, consegue selecionar os modelos com o método de seleção *all regression* e classificá-los de acordo com o método de comparação escolhido. Neste caso foi selecionado o método AIC, ou seja, quanto menor o AIC, melhor o modelo.
+
+```{r M1- Modelo após a seleção de variáveis}
+
+knitr::kable(
+  tabela_model_01_final,
+  caption = "Estimativas do 1º Modelo (após seleção de variáveis)",
+  align = c('r','c','c','c', 'c'))
+
+```
+
+Esse seria o primeiro modelo com ajustes proposto para explicar a variável de interesse. Verifica-se a redução do número de variáveis e a maioria das estiamtivas. Com o modelo gerado, basta verificar se ele se adequa aos pressupostos.
+
+### Valores Extremos
+
+Encontrar possíveis valores extremos que possam impactar nas estimativas dos coeficientes é fundamental para retirá-los ou transformá-los e assim evitar que influenciem o modelo.
+
+Há 3 tipos de valores extremos:
+
+-   **Pontos Atípicos**: valores discrepantes dos resíduos estudentizados;
+-   **Pontos de Alavancagem**: valores discrepantes entre os valores da diagonal principal da matriz hat dos dados.
+-   **Pontos Influentes**: classificado de acordo com a distância de cook para cada observação.
+
+O que mais impacta o modelo é o ponto influente, já que estes interferem bruscamente nos valores das estimativas.
+
+As 3 medições podem ser resumidas em um único gráfico:
+
+```{r M1- Gráfico Geral de Diagnóstico}
+#| fig-cap: Gráfico Geral de Diagnóstico de Valores Extremos - 1º Modelo
+#| fig-width: 8
+#| fig-cap-location: bottom 
+
+outliers_model_01 %>% 
+  ggplot(
+    aes(x=outliers_model_01$hii,
+        y=outliers_model_01$rst,
+        text=outliers_model_01_texto)) +
+    geom_point(
+      aes(size=outliers_model_01$dcook)) + 
+    xlim(0, 
+         max(max(outliers_model_01$hii),
+             outliers_model_01_cortes[1,])) + 
+    ylim(-max(abs(outliers_model_01$rst),
+              outliers_model_01_cortes[3,]),
+         max(abs(outliers_model_01$rst),
+             outliers_model_01_cortes[3,])) + 
+    geom_hline(yintercept = c(-outliers_model_01_cortes[3,],
+                              outliers_model_01_cortes[3,]), 
+               color="red", 
+               linetype="dashed") + 
+    geom_vline(xintercept = outliers_model_01_cortes[1,], color="red", linetype="dashed") + 
+    theme_bw() +
+    theme(legend.position="none") + 
+    xlab("
+         Alavancagem") + 
+    ylab("Resíduo Estudentizado") +
+    scale_x_continuous(breaks = seq(0,0.5,0.1))+
+    theme(axis.title = element_text(size = 13, family = "serif"),
+          axis.text = element_text(size=11, family = "serif"))
+
+```
+
+Ele verifica tanto os pontos de alavancagem (eixo x), pontos atípicos (eixo y), e influentes (tamanho dos pontos). Há alguns pontos atípicos (valores maiores que 2 ou menores que -2) e pontos de alavancagem (valores maiores que `r round(outliers_model_01_cortes[1,],3)`)
+
+Como este é um documento estático, não há a possibilidade de verificar de maneira interativa o tamanho dos pontos e se eles são ou não pontos influentes de acordo com a distância de cook. Para isso há a seguinte tabela que informa os pontos que são atípicos, de alavancagem e suas distâncias de cook:
+
+```{r Tabela Cook}
+outliers_model_01_qntd_s_cook<-
+  outliers_model_01_qntd_s_cook %>% 
+  mutate(x = ifelse(dcook > outliers_model_01_cortes[2,], "sim", "nao")) %>% 
+  select(-obs)
+
+rownames(outliers_model_01_qntd_s_cook) <-
+  paste("Obs.:", row.names(outliers_model_01_qntd_s_cook))
+knitr::kable(outliers_model_01_qntd_s_cook,
+             caption = "Pontos Atípicos e de Alavancagem do 1º Modelo",
+             col.names = c("Resíduos", "Diagonal da Matriz Hat", "Distância Cook", "São Pontos Influentes?"),
+             align = c('r', 'r', 'r', 'r')
+             )
+
+# qnt_ATIP <- as.list(table(outliers_model_01$rst > 2 | outliers_model_01$rst < -2))$`TRUE`
+
+```
+
+Observa-se que mesmo tendo `r nrow(outliers_model_01_qntd_s_cook)` pontos que sejam atípicos e de alavancagem, não há nenhuma observação de que esses pontos sejam pontos influentes, dado que o ponto de corte para a distância de cook deste modelo seja de `r round(outliers_model_01_cortes[2,], 2)`.
+
+### Normalidade
+
+A fim de analisar se o modelo atende ao pressuposto de normalidade dos erros, foi construído os seguintes gráficos que apresentam informações sobre os resíduos:
+
+```{r M1- Gráfico Histograma de Normalidade}
+#| fig-height: 6
+#| fig-cap-location: top
+#| fig-cap: Gráficos para Verificação da Normalidade - 1º Modelo
+
+## histograma r studentizados ----------------------------------------------
+
+a <-rst_model_01 %>% 
+  data.frame() %>% 
+  ggplot(aes(x=rst_model_01)) + 
+  geom_histogram(aes(y=..density..)) + 
+  geom_density(alpha=.1, fill="blue") +
+  theme_bw()+
+  xlab("
+  Resíduos")+
+  ylab("
+       Densidade")+
+  theme(axis.title = element_text(size = 15),
+        axis.text = element_text(size=13)
+        )
+
+## gráfico quantil quantil -------------------------------------------------
+
+b <- rst_model_01 %>% 
+  data.frame() %>% 
+  ggplot(aes(sample=rst_model_01)) + 
+  stat_qq() + 
+  stat_qq_line() +
+  theme_bw() +
+  ylab("
+       Quantis Observados dos Resíduos")+
+  xlab("
+  Quantis Teóricos") +
+  theme(axis.title = element_text(size = 15),
+        axis.text = element_text(size=13)
+        )
+
+egg::ggarrange(
+  a, b, ncol = 2, nrow = 1,
+  widths = c(1.1, 0.9),
+  heights = 0.1, labels = c("(a)", "(b)")
+  )
+```
+
+No 1º gráfico da Figura 5 é construído o histograma dos valores dos resíduos com o intuito de verificar se a distribuição se assemelha a uma distribuição normal[^2], onde, a primeira vista, percebe-se uma certa semelhança.
+
+[^2]: Simétrica na média, ocasionando na congruência ou aproximação dos valores da média, mediana e moda.
+
+Já o 2º gráfico trata-se de um Q-Q plot, também conhecido como gráfico Quantil-Quantil, tendo como finalidade comparar duas distribuições por meio dos quantis dos valores observados com os quantis teóricos, neste caso os quantis teóricos se referem à distribuição normal.
+
+A interpretação desse gráfico sugere que quanto mais os valores plotados permanecem sobre a reta, mais próximo da distribuição teórica os valores observados estão. Neste caso, no entanto, à medida que valores observados crescem, mais distante da reta os pontos estão, sendo um indicativo de que os erros/resíduos não seguem uma distribuição normal.
+
+Como os gráficos apenas dão interpretações subjetivas para supor ou não a normalidade, os testes de hipóteses são utilizados para verificar, com um maior rigor, a normalidade do conjunto de dados.
+
+Há diversos testes de hipóteses na literatura, cada um com suas características. Os detalhes das escolhas não serão apresentados, mas fica a título de curiosidade saber quais testes existem e como eles são estruturados. No geral, a hipótese nula supõe normalidade aos dados, enquanto a hipótese alternativa não garante essa característica. Desse modo, se o p-valor apresentado for menor que o nível de significância escolhido (1%, 5% ou 10%), deve-se rejeitar H0, ou seja, não há como supor a normalidade, caso contrário, pode-se supor a normalidade.
+
+```{r M1- Tabela Testes de Normalidade}
+knitr::kable(normalidade_model_01,
+             caption = "Testes de Normalidade dos Resíduos - 1º Modelo"
+             )
+```
+
+Todos os resultados apresentados pelos testes de normalidade escolhidos rejeitam H0 a um nível de 1% de significância, ou seja, o indicativo é de que não há normalidade nos erros. Isso impacta na estimação dos parâmetros do 1º Modelo e uma alternativa para solucionar esse problema é aplicar a transformação box-cox na variável de interesse. A transformação box-cox é:
+
+$$ Y^{*} =
+  \begin{cases}
+    \frac{Y^{\lambda}-1}{\lambda}      & \quad \text{se }  \lambda \neq 0\\
+    \log(\lambda)   & \quad \text{se } \lambda = 0
+  \end{cases}
+$$
+
+Essa transformação afeta............................ pretende-se normalizar os erros.
+
+Para obter o valor de $\lambda$, é utilizado o método de estimação por máximo verosimilhança (EMV). Utilizando a função *boxcox()* do pacote *MASS*, verificou-se $\lambda =$ `r round(lambda_model_01, 2)`, portanto diferente de zero. Esse valor é o parâmetro que indica o poder da transformação de box-cox. A partir disso, $Y_{*}$ passará a ser a nossa variável de interesse.
+
+\pagebreak
+
+## 2º Modelo
+
+O próximo passo após aplicar a transformação box-cox é construir outro modelo a partir dos dados transformados. Sendo assim, as estimativas do 2º Modelo, que utiliza o $Y^{*}$ em vez do $Y$, são dadas por:
+
+```{r M2- Tabela de Coeficientes Antes Seleção de Variáveis}
+model_02_inicial<- lm(Y ~.^2, data = df_ajustado )
+model_02_inicial_summary <- model_02_inicial %>% summary
+
+tabela_model_02_inicial <-
+  model_02_inicial_summary$coefficients %>%
+  as.data.frame() %>%
+  janitor::clean_names()
+
+tabela_model_02_inicial <- tabela_model_02_inicial %>%
+  mutate(significancia = ifelse(pr_t < 0.01, 1, 0)) %>%
+  round(4) %>%
+  mutate(significancia = ifelse(significancia == 1, "sim", "nao"))
+
+rownames(tabela_model_02_inicial) <-
+  c("(Intercepto)",
+    rownames(tabela_model_02_inicial)[2:length(rownames(tabela_model_02_inicial))])
+colnames(tabela_model_02_inicial) <-
+  c("Estimativa",
+    "Desvio Padrão",
+    "T",
+    "P-Valor",
+    "Estatísticamente Significante?")
+
+knitr::kable(
+  tabela_model_02_inicial,
+  caption = "Estimativas do 2º Modelo (inicialmente)",
+  align = c('r','c','c','c', 'c'))
+```
+
+Percebe-se que a maioria das variáveis não são estatisticamente significantes, assim como no 1º modelo. Por conta disso deve-se realizar a seleção de variáveis para obter um modelo parcimonioso[^3]. Com o mesmo método de seleção de variáveis do 1º Modelo, *all regression*, consegue-se os seguintes resultados:
+
+[^3]: Modelo com o menor número de variável significantes possíveis
+
+```{r M2- Tabela de Coeficientes 2º Modelo (após seleção de variáveis)}
+knitr::kable(
+  tabela_model_02,
+  caption = "Estimativas do 2º Modelo (após seleção de variáveis)",
+  align = c('r','c','c','c', 'c'))
+```
+
+Este modelo foi o melhor modelo após a transformação box-cox. Ele possui o AIC de `r round(aic(model_02), 2)`, bem menor se comparado ao modelo anterior.
+
+### Valores extremos
+
+Verifica-se novamente, por meio dos resíduos, se há valores extremos que influenciam nas estimações do novo modelo.
+
+```{r M2- Gráfico Geral de Diagnóstico}
+#| fig-cap: Gráfico Geral de Diagnóstico de Valores Extremos - 2º Modelo
+#| fig-cap-location: top
+#| fig-width: 8
+
+outliers_model_02 %>% 
+  ggplot(
+    aes(
+      x=outliers_model_02$hii,
+      y=outliers_model_02$rst,
+      text=outliers_model_02_texto)
+    ) +
+    geom_point(
+      aes(
+        size=outliers_model_02$dcook)) + 
+    xlim(0, 
+         max(max(outliers_model_02$hii),
+             outliers_model_02_cortes[1,])) + 
+    ylim(-max(abs(outliers_model_02$rst),
+              outliers_model_02_cortes[3,]),
+         max(abs(outliers_model_02$rst), 
+             outliers_model_02_cortes[3,])) + 
+    geom_hline(yintercept = c(-outliers_model_02_cortes[3,],
+                              outliers_model_02_cortes[3,]), 
+               color="red", 
+               linetype="dashed") + 
+    geom_vline(xintercept = outliers_model_02_cortes[1,], 
+               color="red", 
+               linetype="dashed") + 
+    theme_bw() +
+    theme(legend.position="none") + 
+    xlab("
+         Alavancagem") + 
+    ylab("Resíduo Estudentizado")+
+    scale_x_continuous(breaks = seq(0,0.5,0.1))+
+    theme(axis.title = element_text(size = 13, family = "serif"),
+          axis.text = element_text(size=11, family = "serif"))
+```
+
+Com o gráfico, aparentemente aparecem pontos que são atípicos(valores dos resíduos maiores que 2 ou menores que menos 2) e de alavancagem(valores da diagonal da matriz hat maiores que `r round(outliers_model_02_cortes[1,],4)`). Resta saber se, pelo tamanho dos essa característica, já que seu histograma se assemelha com a densidade da normal e os pontos entre os resíduos e os valores ajustados estão mais alinhados no Q-Q plot se comparado com o 1º Modelo.
+
+```{r M2- Tabela Testes de Normalidade}
+knitr::kable(normalidade_model_02,
+             caption = "Testes de Normalidade dos Resíduos - 2º Modelo")
+```
+
+Além dos gráficos, os testes de *Asymptotic one-sample Kolmogorov-Smirnov* e *Lilliefors (Kolmogorov-Smirnov)* não rejeitaram H0 a um nível de 1% de significância, ou seja, há evidências de que os resíduos do 2º Modelo apresentam uma distribuição normal. No entanto, é observado que os demais testes de normalidade não possuem sinais para não rejeitar a hipótese nula. Mesmo assim, continua-se com a análise dos pressupostos desse modelo.
+
+\pagebreak
+
+### Homocedasticidade
+
+Supor que a variância dos resíduos é constante faz parte das verificações de pressupostos do modelo, pois se o modelo não atende essa característica, pode impactar nas estimativas do modelo.
+
+Para verificar a homocedasticidade dos erros, é utilizado o teste de *Breusch-Pagan*. Esse teste consiste em verificar se a variância dos erros dados os valores das covariáveis são constantes (hipótese nula) ou se eles variam (hipótese alternativa).
+
+Com a função *bptest*, do pacote *lmtest*, consegue-se obter o resultado do teste para o 2º Modelo.
+
+```{r M2- Teste Breusch-Pagan}
+x <- as.data.frame(cbind(teste_bp_model_02$statistic,
+                         teste_bp_model_02$p.value))
+rownames(x) <- "Breusch-Pagan test"
+colnames(x) <- c("Estatística", "P-Valor")
+knitr::kable(x, caption = "Teste de Homocedasticidade")
+```
+
+Como o P-Valor é menor que o nível de significância de 1%, há evidências que permite rejeitar a hipótese nula, indicando que a heterocedasticidade está presente no modelo.
+
+```{r M2- Gráfico Homocedasticidade}
+#| fig-cap: Gráfico da Dispersão dos Resíduos em Relação aos Valores Estimados - 2º Modelo
+#| fig-cap-location: top
+#| fig-width: 8
+
+plot_homocedasticidas <- as.data.frame(cbind(fitted = model_02$fitted.values,residuals =  model_02$residuals))
+
+
+plot_homocedasticidas %>% 
+ggplot(aes(x =fitted, y=residuals)) +
+  geom_point()+
+  geom_hline(
+    yintercept=0, 
+    color="#921212",
+    size=0.7,
+    linetype="dashed"
+    )+
+  theme_bw() +
+  xlab("
+       Valores Ajustados") +
+  ylab("Resíduos")+
+  theme(axis.title = element_text(size = 13, family = "serif"),
+        axis.text = element_text(size = 11, family = "serif"))
+
+```
+
+Esse gráfico corrobora com o resultado do teste, apresentando fortes indícios da presença de heterocedasticidade. Percebe-se que à medida que os valores estimados da variável de interesse aumentam, a variância dos resíduos fica menos dispersa em torno de 0, que é a média teórica dos erros e os valores dos resíduos inclinam-se para valores negativos. Por conta disso os resíduos aparentam não ter variância constante, não homogênea.
+
+\pagebreak
+
+## 3º Modelo
+
+Com o objetivo de incorporar a heterocedasticidade presente no 2º modelo, foi utilizado o Modelo Aditivo generalizado para localização, escala e forma (GAMLSS). Esse modelo atribui a variabilidade das variáveis explicativas ao ajuste do modelo, moldando conforme a heterocedasticidade dos dados.
+
+No R, aplica-se a função *gamlss*, do pacote **gamlss**, para obter o novo modelo. Desse modo são obtidos os seguintes resultados:
+
+```{r M3 - Tabela de Coeficientes estimações de mu}
+#| label: tbl-modelo3mu
+#| tbl-cap:  "Estimativas de $\\mu$ para o 3º Modelo"
+t_mu_model_03 <- model_03$mu.coefficients %>% length()
+tabela_model_03_mu <- tabela_model_03[1:t_mu_model_03,]
+
+knitr::kable(
+  tabela_model_03_mu,
+  # caption = "Estimativas de $\\mu$ para o 3º Modelo",
+  align = c('r','c','c','c', 'c')) 
+```
+
+```{r M3 - Tabela de Coeficientes estimações de sigma}
+#| label: tbl-modelo3sigma
+#| tbl-cap: "Estimativas de $\\sigma^{2}$ para o 3º Modelo"
+t_sigma_model_03 <- model_03$sigma.coefficients %>% length()
+t_model_03 <- t_sigma_model_03 + t_mu_model_03
+tabela_model_03_sigma <- tabela_model_03[(t_mu_model_03+1):t_model_03,]
+rownames(tabela_model_03_sigma) <- c("(Intercepto)", stringr::str_sub(rownames(tabela_model_03_sigma)[-1], 1,2))
+
+knitr::kable(
+  tabela_model_03_sigma,
+  # caption = "Estimativas de $\\sigma^{2}$ para o 3º Modelo",
+  align = c('r','c','c','c', 'c')) 
+```
+
+As covariáveis utilizadas para o 3º Modelo de $\mu$ são as mesmas que a do 2º Modelo, porém as estimativas dos coeficientes sofreram alterações por conta do ajuste feito para considerar a heterocedasticidade constatadas no 2º Modelo.
+
+Já para selecionar as variáveis estatisticamentes significativas para obter o modelo de $\sigma^{2}$, foram retiradas uma por uma as variáveis que apresentaram o P-Valor menor que 0.05. Com isso temos as estimativas dos valores de interesse onde $Y \sim N(\mu_{i}, \sigma^{2}_{i})$
+
+Após a incorporação da heterocedasticidade, também se faz necessário verificar se o modelo está adequado às suposições dos resíduos.
+
+\pagebreak
+
+### Valores Extremos
+
+```{r M3- Gráfico Geral de Diagnóstico}
+#| label: fig-m3outilers
+#| fig-cap: Gráfico Geral de Diagnóstico de Valores Extremos - 3º Modelo
+#| fig-cap-location: top
+#| fig-width: 8
+
+outliers_model_03 %>% 
+  ggplot(
+    aes(
+      x=outliers_model_03$hii,
+      y=outliers_model_03$rst,
+      text=outliers_model_03_texto)
+    ) +
+    geom_point(
+      aes(
+        size=outliers_model_03$dcook
+        )
+      ) + 
+    xlim(
+      0, 
+      max(max(outliers_model_03$hii),
+          outliers_model_03_cortes[1,])
+      ) + 
+    ylim(
+      -max(abs(outliers_model_03$rst), outliers_model_03_cortes[3,]),
+      max(abs(outliers_model_03$rst), outliers_model_03_cortes[3,])) + 
+    geom_hline(yintercept = c(-outliers_model_03_cortes[3,],
+                              outliers_model_03_cortes[3,]), 
+               color="red", 
+               linetype="dashed") + 
+    geom_vline(xintercept = outliers_model_03_cortes[1,], color="red", linetype="dashed") + 
+    theme_bw() +
+    theme(legend.position="none") + 
+    xlab("
+         Alavancagem") + 
+    ylab("Resíduo Estudentizado")+
+    theme(axis.title = element_text(size = 13, family = "serif"),
+            axis.text = element_text(size=11, family = "serif")
+        )
+
+```
+
+Na @fig-m3outilers é observável a existência de alguns pontos atípicos e de alavancagem.
+
+```{r M3- Tabela Cook}
+outliers_model_03_qntd_s_cook<-
+  outliers_model_03_qntd_s_cook %>% 
+  mutate(x = ifelse(dcook > outliers_model_03_cortes[2,], "sim", "nao")) %>% 
+  select(-obs)
+
+rownames(outliers_model_03_qntd_s_cook) <-
+  paste("Obs.:", row.names(outliers_model_03_qntd_s_cook))
+knitr::kable(outliers_model_03_qntd_s_cook,
+             caption = "Pontos Atípicos e de Alavancagem do 2º Modelo",
+             col.names = c("Resíduos", "Diagonal da Matriz Hat", "Distância Cook", "São Pontos Influentes?"),
+             align = c('r', 'r', 'r', 'r')
+             )
+```
+
+As observações visualizadas na @fig-m3outilers não são pontos influentes, pois a distância de cook é menor que o ponto de corte de `r round(outliers_model_03_cortes[2,],2)`. Portanto, não há outilers que impactam no 3º Modelo.
+
+\pagebreak
+
+### Normalidade
+
+```{r M3- Gráfico Histograma de Normalidade}
+#| fig-cap: Gráficos para Verificação da Normalidade - 3º Modelo
+#| fig-cap-location: top
+#| fig-height: 6
+
+## histograma r studentizados ----------------------------------------------
+
+a <-rst_model_03 %>% 
+  data.frame() %>% 
+  ggplot(aes(x=rst_model_03)) + 
+  geom_histogram(aes(y=..density..)) + 
+  geom_density(alpha=.1, fill="blue") +
+  theme_bw()+
+  xlab("
+  Resíduos")+
+  ylab("
+       Densidade")+
+  theme(axis.title = element_text(size = 15),
+        axis.text = element_text(size=13)
+        )
+
+## gráfico quantil quantil -------------------------------------------------
+
+b <- rst_model_03 %>% 
+  data.frame() %>% 
+  ggplot(aes(sample=rst_model_03)) + 
+  stat_qq() + 
+  stat_qq_line() +
+  theme_bw() +
+  ylab("
+       Quantis Observados dos Resíduos")+
+  xlab("
+  Quantis Teóricos") +
+  theme(axis.title = element_text(size = 15),
+        axis.text = element_text(size=13)
+        )
+
+egg::ggarrange(
+  a, b, ncol = 2, nrow = 1,
+  widths = c(1.1, 0.9),
+  heights = 0.1, labels = c("(a)", "(b)")
+  )
+```
+
+Analisando o Q-Q plot do 3º Modelo, interpreta-se que os erros se aproximam da distribuição normal, mas ainda há valores que divergem do que seria estipulado pelo gráfico.
+
+```{r M3- Normalidade}
+knitr::kable(normalidade_model_03,
+             caption = "Testes de Normalidade dos Resíduos - 3º Modelo"
+             )
+```
+
+Diferente do modelos anterior, onde apenas os testes *Asymptotic one-sample Kolmogorov-Smirnov* e *Lilliefors (Kolmogorov-Smirnov)* não rejeitaram a hipótese nula, neste, os testes *Cramer-von Mises*, *Shapiro-Wilk* e *Shapiro-Franci* também supõe evidências para não rejeitar a hipótese nula, ou seja, a distribuição dos resíduos do 3º Modelo se aproxima da normal.
+
+### Homocedasticidade
+
+Devido ao fato da heterocedasticidade já ter sido incorporada neste modelo, não é necessário verificar se há a presença ou não de homocedasticidade na variabilidade dos resíduos.
+
+### Autocorrelação
+
+A autocorrelação dos erros analisa a existência de dependência entre os erros. Geralmente, esse pressuposto é verificado em modelos com dados temporais ou espaciais, já que estes podem ser influenciados por valores anteriores ou por valores próximos, respectivamente. O cenário estudado não se encaixa em nenhum desses casos, mas será realizado mesmo assim.
+
+Um dos métodos utilizados para identificar a existência de correlação é aplicar o teste *Breusch-Godfrey*. Após a aplicação do teste, verificou que o p-valor (`r round(teste_bg_model_03$p.value, 3)`) é maior que o nível de significância de 1%, dando evidências para não rejeitar a hipótese nula, ou seja, não há indícios de autocorrelação entre os erros neste modelo.
+
+```{r M3- Autocorrelação, include=FALSE}
+teste_bg_model_03$p.value
+```
+
+# Conclusões
+
+Portanto, o modelo proposto para utilizar que chegamos é o 3º Modelo. Para chegar a esse resultado foi necessário a manipulação da variável resposta (Glicose) por conta da não normalidade dos dados iniciais, devido a isso, a interpretação da variável resposta estimada é prejudicada. Também ocorreu a incorporação da heterocedasticidade no modelo. Ademais, não tivemos indícios de valores extremos, os dados não apresentam multicolinearidade entre as covariáveis e nem autocorrelação entre os erros.
+
+$$ Y \sim N(\mu_{i}, \sigma_{i}^{2})$$ Para cada valor variável aleatória de interesse (Glicose), terá um valor que dependerá da média $\mu_{i}$ e $\sigma_{i}^{2}$.
+
+Onde, pela @tbl-modelo3mu de estimativas do 3º Modelo:
+
+$$ \mu_{i} = B_{0} + B_{4}X_{4} + B_{6}X_{6} +  + B_{42}X_{4}X_{2} +   B_{45}X_{4}X_{5} + B_{62}X_{6}X_{2} + B_{65}X_{6}X_{5} + B_{27}X_{2}X_{7} + B_{47}X_{4}X_{7}$$ E pela @tbl-modelo3sigma de estimativas das variâncias:
+
+$$ \sigma^{2}_{i} = B_{0} + B_{5}X_{5} + B_{7}X_{7}$$
+
+Pelo modelo de estimação para $\mu_{i}$, percebe-se que a quantidade de gestações das mulheres ($X_{1}$) e o nível de espessura da pele ($X_{3}$) não impactam tanto no nível de glicose ($Y$), já que elas não foram incorporadas ao modelo ajustado.
+
+Já para a variância dos dados $\sigma^{2}_{i}$, o nível de glicose é impactado apenas pela variabilidade de do índice corporal ($X_{5}$) e pela idade ($X_{7}$) das mulheres.
+
+Apesar disso, o modelo proposto pode não ser o mais adequado para a variável resposta, tendo em vista que o nível de glicose pode ter outros fatores que interferem na sua estimação que não foram adotadas no modelo, como visto nas @fig-matriz.
+
+\pagebreak
+
+# Referências
+
+Smith, J.W., Everhart, J.E., Dickson, W.C., Knowler, W.C., & Johannes, R.S. (1988). Using the ADAP learning algorithm to forecast the onset of diabetes mellitus. In Proceedings of the Symposium on Computer Applications and Medical Care (pp. 261--265). IEEE Computer Society Press.
+
+Montogomery, D.C., Peck, A.E., & Vining, G.G., (2012). Introduction to Linear Regression Analysis.
+
+Johnson, R.A. & Wichern, D.W., (2007). Applied Multivariate Statistical Analysis.

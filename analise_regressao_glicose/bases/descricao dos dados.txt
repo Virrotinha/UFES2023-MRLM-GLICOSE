@@ -1,0 +1,16 @@
+### DESCRIÇÃO "TRADUZIDA" ###
+
+O Instituto Nacional de Diabetes e Doenças Digestivas e Renais realizou um estudo
+em índias Pimas adultas que vivem perto de Phoenix-Arizona. Os dados foram
+coletados segundo critério da OMS, em que, as variáveis utilizadas foram:
+
+Pregnancies			Número de vezes que a índia engravidou
+Glucose				Concentração de glicose em teste oral de tolerância à glicose
+BloodPressure			Pressão arterial diastólic (mm Hg)
+SkinThickness			Espessura cutânea triciptal (mm)
+Insulin				2 horas de insulina no soro (mu U/ml)
+BMI				Índice de massa corporal (ICM)
+DiabetesPedigreeFunction	Diabetes função da genealogia
+Age				Idade (anos)
+Outcome				Teste de diabetes (0=saudável, 1=diabético)
+
